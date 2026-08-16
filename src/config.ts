@@ -12,9 +12,16 @@ export interface LlmCostConfig {
   pricing?: PricingRegistry
   /** Override file the refresh tool writes to (default ~/.dsh/llm-cost/pricing.override.json). */
   pricingFile?: string
-  /** Provider route for the price-extraction model call. */
+  /**
+   * Provider route for the price-extraction model call. Optional: when set
+   * together with `refreshModel` it is tried FIRST; otherwise the tool
+   * auto-discovers every available model and tries them cheapest-first.
+   */
   refreshProvider?: string
-  /** Model id for the price-extraction model call. */
+  /**
+   * Model id for the price-extraction model call. Optional: see
+   * {@link refreshProvider} — both are just the head of the fallback chain.
+   */
   refreshModel?: string
 }
 

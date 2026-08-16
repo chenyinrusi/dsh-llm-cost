@@ -5,7 +5,8 @@
  * validation is manual (a bad model must not poison the registry).
  */
 
-import type { PricingEntry } from './pricing.ts'
+import type { PricingEntry, PricingRegistry } from './pricing.ts'
+import { resolvePricing } from './pricing.ts'
 
 export interface RefreshedEntry {
   provider?: string
@@ -21,6 +22,34 @@ export interface RefreshedEntry {
 
 /** Max models priced in one refresh call — bounds the search query while still covering every model in the built-in snapshot. */
 export const MAX_MODELS_PER_REFRESH = 24
+
+/** One model the price-extraction fallback chain can try, in its display form. */
+export interface ExtractionCandidate {
+  provider: string
+  model: string
+  label: string
+}
+
+/** Cheap-first ordering key: free = 0, priced = input+output per-M, unknown last. */
+export function extractionRank(registry: PricingRegistry, provider: string, model: string): number {
+  const resolution = resolvePricing(registry, model, provider)
+  if (resolution.status === 'free') return 0
+  if (resolution.status === 'priced') return resolution.entry.inputPerM + resolution.entry.outputPerM
+  return Number.MAX_SAFE_INTEGER
+}
+
+/** Sort candidates cheapest-first (free, priced ascending, unknown last, stable tie-break). */
+export function sortExtractionCandidates(
+  registry: PricingRegistry,
+  candidates: readonly ExtractionCandidate[],
+): ExtractionCandidate[] {
+  return [...candidates].sort((a, b) => {
+    const ra = extractionRank(registry, a.provider, a.model)
+    const rb = extractionRank(registry, b.provider, b.model)
+    if (ra !== rb) return ra - rb
+    return a.label < b.label ? -1 : a.label > b.label ? 1 : 0
+  })
+}
 
 /** Build one search query over the target models (already capped by the caller). */
 export function buildSearchQuery(models: readonly string[]): string {

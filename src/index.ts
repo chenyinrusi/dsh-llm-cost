@@ -25,7 +25,9 @@ import {
   buildSearchQuery,
   MAX_MODELS_PER_REFRESH,
   parseRefreshedPricing,
+  sortExtractionCandidates,
 } from './refresh.ts'
+import type { ExtractionCandidate } from './refresh.ts'
 
 export const name = 'llm-cost'
 
@@ -123,22 +125,21 @@ function registerRefreshTool(
       }],
     },
     async execute(args, exec) {
-      // Validate config before spending a search/LLM round-trip (the search can
-      // succeed even when the extraction model is missing, wasting both).
-      const provider = config.refreshProvider
-      const model = config.refreshModel
-      if (provider === undefined || model === undefined) {
-        throw new Error(
-          'llm-cost refresh needs refreshProvider + refreshModel in the plugin config '
-          + '(the model that extracts prices from search results)',
-        )
-      }
-
       const all = Array.isArray(args.models) && args.models.length > 0
         ? (args.models as string[])
         : Object.keys(holder.registry.models)
       const models = all.slice(0, MAX_MODELS_PER_REFRESH)
       if (models.length === 0) return { updatedModels: [], count: 0 }
+
+      // Resolve the extraction chain BEFORE spending a search round-trip: there
+      // is no point searching when nothing can turn the results into a table.
+      const candidates = await resolveExtractionCandidates(ctx, holder, config)
+      if (candidates.length === 0) {
+        throw new Error(
+          'llm-cost refresh: no LLM model is available to extract prices '
+          + '(register an LLM adapter, or set refreshProvider/refreshModel)',
+        )
+      }
 
       const search = await ctx.web.search(
         { query: buildSearchQuery(models), maxResults: 10 },
@@ -146,19 +147,91 @@ function registerRefreshTool(
       )
       const prompt = buildExtractPrompt(models, renderSearchContent(search))
 
-      const outputText = await extractWithLlm(ctx, {
-        provider,
-        model,
-        prompt,
-        signal: exec.signal,
-      })
-      const parsed = parseRefreshedPricing(outputText)
+      const result = await extractWithFallback(ctx, candidates, prompt, exec.signal)
+      if (result === null) {
+        throw new Error('llm-cost refresh: every available model failed to extract prices')
+      }
+
+      const parsed = parseRefreshedPricing(result.outputText)
       const updated = applyRefreshed(refreshed, parsed)
       rebuild()
       await persistRegistry(pricingFile, refreshed, holder.registry.version)
+      console.info(`[dsh-llm-cost] refreshed ${updated.length} price(s) via ${result.label}`)
       return { updatedModels: updated, count: updated.length }
     },
   }))
+}
+
+/**
+ * Build the ordered extraction-candidate chain: the explicit
+ * `refreshProvider`/`refreshModel` first (user intent), then every model the
+ * harness can currently reach, cheapest first (unknown-priced models last).
+ * A provider whose catalog query fails simply contributes no candidates.
+ */
+async function resolveExtractionCandidates(
+  ctx: Context,
+  holder: { registry: PricingRegistry },
+  config: LlmCostConfig,
+): Promise<ExtractionCandidate[]> {
+  const seen = new Set<string>()
+  const candidates: ExtractionCandidate[] = []
+  const push = (provider: string, model: string): void => {
+    const key = `${provider}\u0000${model}`
+    if (seen.has(key)) return
+    seen.add(key)
+    candidates.push({ provider, model, label: `${provider}/${model}` })
+  }
+
+  if (config.refreshProvider !== undefined && config.refreshModel !== undefined) {
+    push(config.refreshProvider, config.refreshModel)
+  }
+
+  const discovered: ExtractionCandidate[] = []
+  for (const provider of ctx.llm.listProviders()) {
+    let models
+    try {
+      models = await ctx.llm.listModels(provider.id)
+    } catch {
+      continue
+    }
+    for (const model of models) {
+      discovered.push({ provider: provider.id, model: model.id, label: `${provider.id}/${model.id}` })
+    }
+  }
+  for (const candidate of sortExtractionCandidates(holder.registry, discovered)) {
+    push(candidate.provider, candidate.model)
+  }
+  return candidates
+}
+
+/**
+ * Run the extraction prompt through the candidate chain, cheapest first. The
+ * first candidate whose stream completes successfully wins; failures advance to
+ * the next candidate. Returns null when every candidate fails or the caller's
+ * signal aborts.
+ */
+async function extractWithFallback(
+  ctx: Context,
+  candidates: readonly ExtractionCandidate[],
+  prompt: string,
+  signal?: AbortSignal,
+): Promise<{ outputText: string; provider: string; model: string; label: string } | null> {
+  for (const candidate of candidates) {
+    if (signal?.aborted) return null
+    try {
+      const outputText = await extractWithLlm(ctx, {
+        provider: candidate.provider,
+        model: candidate.model,
+        prompt,
+        signal,
+      })
+      return { outputText, ...candidate }
+    } catch (error) {
+      if (signal?.aborted) return null
+      console.warn(`[dsh-llm-cost] refresh extraction failed on ${candidate.label}:`, error)
+    }
+  }
+  return null
 }
 
 function renderSearchContent(search: WebSearchResult): string {

@@ -4,7 +4,7 @@
  * JSON answer. The LLM output is untrusted, so parsing is lenient and field
  * validation is manual (a bad model must not poison the registry).
  */
-import type { PricingEntry } from './pricing.ts';
+import type { PricingEntry, PricingRegistry } from './pricing.ts';
 export interface RefreshedEntry {
     provider?: string;
     inputPerM: number;
@@ -18,6 +18,16 @@ export interface RefreshedEntry {
 }
 /** Max models priced in one refresh call — bounds the search query while still covering every model in the built-in snapshot. */
 export declare const MAX_MODELS_PER_REFRESH = 24;
+/** One model the price-extraction fallback chain can try, in its display form. */
+export interface ExtractionCandidate {
+    provider: string;
+    model: string;
+    label: string;
+}
+/** Cheap-first ordering key: free = 0, priced = input+output per-M, unknown last. */
+export declare function extractionRank(registry: PricingRegistry, provider: string, model: string): number;
+/** Sort candidates cheapest-first (free, priced ascending, unknown last, stable tie-break). */
+export declare function sortExtractionCandidates(registry: PricingRegistry, candidates: readonly ExtractionCandidate[]): ExtractionCandidate[];
 /** Build one search query over the target models (already capped by the caller). */
 export declare function buildSearchQuery(models: readonly string[]): string;
 /**

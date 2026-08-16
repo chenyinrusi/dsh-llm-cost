@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import {
   applyRefreshed,
   buildSearchQuery,
+  extractionRank,
   parseRefreshedPricing,
+  sortExtractionCandidates,
 } from '../src/refresh.ts'
 import type { PricingEntry } from '../src/pricing.ts'
 
@@ -57,4 +59,33 @@ test('buildSearchQuery joins every model it is given (no internal 12-model cap)'
   const query = buildSearchQuery(models)
   assert.ok(query.includes('model-19'), 'the last model must be present')
   assert.ok(query.includes('model-0'))
+})
+
+test('extraction candidates sort cheapest-first: free, priced ascending, unknown last', () => {
+  const registry = {
+    version: 1,
+    models: {
+      expensive: { inputPerM: 10, outputPerM: 20 },
+      cheap: { inputPerM: 0.1, outputPerM: 0.2 },
+    },
+  }
+  const sorted = sortExtractionCandidates(registry, [
+    { provider: 'openai', model: 'mystery', label: 'openai/mystery' },
+    { provider: 'deepseek', model: 'expensive', label: 'deepseek/expensive' },
+    { provider: 'ollama', model: 'llama3', label: 'ollama/llama3' },
+    { provider: 'deepseek', model: 'cheap', label: 'deepseek/cheap' },
+  ])
+  assert.deepEqual(sorted.map((c) => c.label), [
+    'ollama/llama3', // free
+    'deepseek/cheap', // 0.3
+    'deepseek/expensive', // 30
+    'openai/mystery', // unknown
+  ])
+})
+
+test('extractionRank: free = 0, priced = input+output, unknown = MAX_SAFE_INTEGER', () => {
+  const registry = { version: 1, models: { m: { inputPerM: 2, outputPerM: 3 } } }
+  assert.equal(extractionRank(registry, 'ollama', 'anything'), 0)
+  assert.equal(extractionRank(registry, 'x', 'm'), 5)
+  assert.equal(extractionRank(registry, 'x', 'nope'), Number.MAX_SAFE_INTEGER)
 })

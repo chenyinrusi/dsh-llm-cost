@@ -1,7 +1,7 @@
 /**
  * Client plugin for dsh-llm-cost: renders the turn's dollar cost under each
- * completed assistant message, in the `conversation.chat.turnTail` extension
- * chain (the row that already shows "· Ran for · TTFT · tok/s").
+ * completed assistant message (the `conversation.chat.turnTail` chain) and the
+ * session's cumulative total in the header utilities row.
  *
  * Unpriced models are rendered as "unknown" — never a misleading $0.00.
  */
