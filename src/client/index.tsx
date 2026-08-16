@@ -1,14 +1,14 @@
 /**
  * Client plugin for dsh-llm-cost: renders the turn's dollar cost under each
  * completed assistant message (the `conversation.chat.turnTail` chain) and the
- * session's cumulative total as a floating pill at the conversation column's
- * bottom-left (`shell.overlay`, offset past the sidebar), expanding to the
- * per-model breakdown on hover.
+ * session's cumulative total as a cost segment in the composer dock
+ * (`conversation.composer.dock`, beside the shipped stats line), expanding to
+ * the per-model breakdown on hover.
  *
  * Unpriced models are rendered as "unknown" — never a misleading $0.00.
  */
 
-import { createElement, useEffect, useState } from 'react'
+import { createElement, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type {
   ClientContext,
@@ -16,9 +16,6 @@ import type {
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-// Type-only: loads ui-layout's SlotMap augmentation so 'shell.overlay' is a
-// valid slot key in this client program (the slot is declared by that package).
-import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '../projection.ts'
 
 export const inject = ['slots']
@@ -68,21 +65,15 @@ function CostTailView({ turn, matched, useProjection }: CostTailProps) {
   return createElement('div', { 'data-llm-cost': turn.turn }, parts.join(' · '))
 }
 
-type CostPillProps = PropsRuntime<'shell.overlay'>
+type CostDockProps = PropsRuntime<'conversation.composer.dock'>
 
-const PILL_STYLE: CSSProperties = {
-  position: 'fixed',
-  bottom: 16,
-  display: 'inline-flex',
-  alignItems: 'center',
-  maxWidth: 'min(320px, 40vw)',
-  padding: '4px 10px',
-  borderRadius: 999,
+const COST_STYLE: CSSProperties = {
+  position: 'relative',
+  textAlign: 'center',
+  marginTop: 2,
   fontSize: 12,
-  lineHeight: '18px',
-  color: 'var(--dsw-alias-label-primary, rgba(15, 15, 15, 0.92))',
-  background: 'var(--dsw-alias-interactive-bg-hover, rgba(128, 128, 128, 0.16))',
-  border: '1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.35))',
+  lineHeight: 20,
+  color: 'var(--dsw-alias-label-tertiary, rgba(15, 15, 15, 0.6))',
   cursor: 'default',
   userSelect: 'none',
   whiteSpace: 'nowrap',
@@ -90,8 +81,9 @@ const PILL_STYLE: CSSProperties = {
 
 const POPOVER_STYLE: CSSProperties = {
   position: 'absolute',
-  left: 0,
-  bottom: 'calc(100% + 8px)',
+  left: '50%',
+  bottom: 'calc(100% + 6px)',
+  transform: 'translateX(-50%)',
   minWidth: 240,
   padding: '10px 12px',
   borderRadius: 10,
@@ -119,32 +111,13 @@ const POPOVER_ROW_STYLE: CSSProperties = {
 }
 
 /**
- * Bottom-left cumulative cost pill: an always-visible session total that
- * expands to the per-model breakdown on hover/focus. `shell.overlay` is
- * root-scoped, so it carries no `useProjection` seat — the current session's
- * `costUsage` is read through the global `useSessions` store instead.
+ * Composer-dock cumulative total: the whole session's dollar cost so far,
+ * read from the same `costUsage` projection the per-turn tails use. Renders
+ * nothing until the session has at least one metered step.
  */
-function CostPill({ useSessions }: CostPillProps) {
+function CostDock({ useProjection }: CostDockProps) {
   const [open, setOpen] = useState(false)
-  // shell.overlay is frame-wide, so the pill anchors past the left sidebar to
-  // sit at the conversation column's bottom-left rather than the viewport's.
-  const [left, setLeft] = useState(296) // SIDEBAR_DEFAULT (280) + 16
-  const cost = useSessions((s) => {
-    const id = s.current
-    return id === undefined ? undefined : s.byId[id]?.projectionValues?.costUsage
-  })
-
-  useEffect(() => {
-    const frame = document.querySelector('[data-shell-overlay]')?.parentElement
-    const sidebar = frame?.firstElementChild
-    if (frame == null || sidebar == null) return
-    const update = (): void => { setLeft(sidebar.getBoundingClientRect().width + 16) }
-    update()
-    const observer = new ResizeObserver(update)
-    observer.observe(sidebar)
-    return () => { observer.disconnect() }
-  }, [])
-
+  const cost = useProjection('costUsage')
   if (cost === undefined || cost.totalCostUsd === undefined || cost.pricedSteps + cost.unpricedSteps === 0) return null
 
   const tokens = cost.inputTokens + cost.outputTokens + cost.cacheReadTokens + cost.cacheWriteTokens
@@ -155,7 +128,7 @@ function CostPill({ useSessions }: CostPillProps) {
   return createElement('div', {
     'data-llm-cost-session': 'total',
     tabIndex: 0,
-    style: { ...PILL_STYLE, left },
+    style: COST_STYLE,
     onMouseEnter: () => { setOpen(true) },
     onMouseLeave: () => { setOpen(false) },
     onFocus: () => { setOpen(true) },
@@ -181,8 +154,9 @@ export function apply(ctx: ClientContext): void {
     select: (owner: TurnTailOwnerProps) => ({ turn: owner.turn.turn }),
   }, CostTailView))
 
-  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-    name: 'shell.overlay',
+  ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
+    name: 'conversation.composer.dock',
     id: 'llm-cost-total',
-  }, CostPill))
+    order: 100,
+  }, CostDock))
 }
