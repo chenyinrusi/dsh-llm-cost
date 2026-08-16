@@ -24,15 +24,14 @@ DSH 已经精确记录了每个 step 的真实 token 用量（`assistant/message
 ## 安装
 
 ```bash
-# npm（发布后）
-dsh plugin --profile web add dsh-llm-cost
+# git（推荐：lib/ 已提交，免本地构建）
+dsh plugin --profile web add github:chenyinrusi/dsh-llm-cost#v0.2.0
 
-# 本地 tarball（未发布时 / 内网）
-dsh plugin --profile web add ./dsh-llm-cost-0.1.0.tgz
-
-# git（需 allowBuilds 授权，见官方发布手册）
-dsh plugin --profile web add github:chenyinrusi/dsh-llm-cost#v0.1.0
+# 本地 tarball（内网 / 离线）
+dsh plugin --profile web add ./dsh-llm-cost-0.2.0.tgz
 ```
+
+> npm 渠道暂未发布。如需 `dsh plugin --profile web add dsh-llm-cost`，先在仓库跑 `npm login && npm publish`。
 
 本地验证：`pnpm dsh web --patch ./cordis.patch.yml`（或 `--dump-config` 查看层）。
 
@@ -59,11 +58,13 @@ dsh plugin --profile web add github:chenyinrusi/dsh-llm-cost#v0.1.0
 
 前置：DSH 里要装一个 web 搜索 provider（`dsh-web-search-*`）+ 一个可用的 LLM 路由。抽取结果建议先人工抽查——它写的是 override 文件，**不会**覆盖内置快照。
 
-> 定价是会过期的数据（intro 价、模型改名）。把 `src/config/llm_models.toml [pricing_v2]` 作为单一事实来源，跑 `pnpm gen`（`node scripts/gen-pricing.mjs`）重新生成 `pricing.json` + `src/pricing-data.ts`，锁步发布。
+> 定价是会过期的数据（intro 价、模型改名、峰谷调整）。把 `src/config/llm_models.toml [pricing_v2]` 作为单一事实来源，跑 `npm run gen`（`node scripts/gen-pricing.mjs`）重新生成 `pricing.json` + `src/pricing-data.ts`，锁步发布。
 
 ## 数据
 
-`pricing.json` 是内置 JSON 快照，由 `scripts/gen-pricing.mjs` 从 `llm_models.toml [pricing_v2]` 生成（默认读相邻 `customized_agentic_system/src/config/llm_models.toml`）。计费字段：`inputPerM` / `outputPerM` / `cacheReadPerM` / `cacheWritePerM`（`cacheWrite1hPerM` 保留，batch/storage 维度 v1 不计入显示值）。
+`pricing.json` 是内置 JSON 快照，由 `scripts/gen-pricing.mjs` 从 `llm_models.toml [pricing_v2]` 生成（默认读相邻 `customized_agentic_system/src/config/llm_models.toml`）。计费字段：`inputPerM`（cache miss）/ `outputPerM` / `cacheReadPerM`（cache hit）/ `cacheWritePerM`（`cacheWrite1hPerM` 保留，batch/storage 维度 v1 不计入显示值）。
+
+**峰谷定价**：字段存的是**峰值价**；`offPeakFactor`（如 0.5）声明闲时折扣。峰时窗口 = 01:00–04:00 & 06:00–10:00 UTC，其余时段成本 × `offPeakFactor`。成本计算按事件时间戳判定，未声明 `offPeakFactor` 的模型恒按峰值价。
 
 ## 匹配阶梯（对齐 `models.py:get_pricing`）
 
