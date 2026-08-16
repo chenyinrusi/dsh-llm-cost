@@ -70,9 +70,10 @@ function CostTailView({ turn, matched, useProjection }: CostTailProps) {
 type CostPillProps = PropsRuntime<'shell.overlay'>
 
 const PILL_STYLE: CSSProperties = {
-  position: 'absolute',
+  position: 'fixed',
   left: 16,
   bottom: 16,
+  zIndex: 9999,
   display: 'inline-flex',
   alignItems: 'center',
   maxWidth: 'min(320px, 40vw)',
@@ -130,10 +131,15 @@ function CostPill({ useSessions }: CostPillProps) {
     const id = s.current
     return id === undefined ? undefined : s.byId[id]?.projectionValues?.costUsage
   })
-  if (cost === undefined || cost.pricedSteps + cost.unpricedSteps === 0) return null
 
-  const tokens = cost.inputTokens + cost.outputTokens + cost.cacheReadTokens + cost.cacheWriteTokens
-  const label = cost.unpricedSteps > 0
+  // Diagnostic: always render something so mount vs data vs position is
+  // distinguishable without a debugger. `totalCostUsd === undefined` means the
+  // cumulative fields did not reach the client even though `steps` did.
+  let label: string
+  if (cost === undefined) label = 'llm-cost: NO DATA'
+  else if (cost.totalCostUsd === undefined) label = 'llm-cost: NO CUMULATIVE FIELDS'
+  else if (cost.pricedSteps + cost.unpricedSteps === 0) label = 'llm-cost: 0 STEPS'
+  else label = cost.unpricedSteps > 0
     ? `${formatUsd(cost.totalCostUsd)} + ${cost.unpricedSteps} unknown`
     : formatUsd(cost.totalCostUsd)
 
@@ -147,11 +153,11 @@ function CostPill({ useSessions }: CostPillProps) {
     onBlur: () => { setOpen(false) },
   },
     createElement('span', null, label),
-    open && createElement('div', { style: POPOVER_STYLE },
+    open && cost !== undefined && createElement('div', { style: POPOVER_STYLE },
       createElement('div', { style: POPOVER_TITLE_STYLE }, label),
       createElement('div', { style: POPOVER_META_STYLE },
-        `${cost.pricedSteps} priced · ${cost.unpricedSteps} unknown · ${formatTokens(tokens)} tokens`),
-      cost.byModel.map((entry) => createElement('div', {
+        `${cost.pricedSteps ?? '?'} priced · ${cost.unpricedSteps ?? '?'} unknown · ${formatTokens((cost.inputTokens ?? 0) + (cost.outputTokens ?? 0) + (cost.cacheReadTokens ?? 0) + (cost.cacheWriteTokens ?? 0))} tokens`),
+      (cost.byModel ?? []).map((entry) => createElement('div', {
         key: entry.model,
         style: POPOVER_ROW_STYLE,
       },
@@ -161,13 +167,20 @@ function CostPill({ useSessions }: CostPillProps) {
 }
 
 export function apply(ctx: ClientContext): void {
+  // eslint-disable-next-line no-console
+  console.log('[dsh-llm-cost] client apply() running')
+
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
     name: 'conversation.chat.turnTail',
     select: (owner: TurnTailOwnerProps) => ({ turn: owner.turn.turn }),
   }, CostTailView))
 
-  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-    name: 'shell.overlay',
-    id: 'llm-cost-total',
-  }, CostPill))
+  ctx.slots.inject('shell.overlay', () => {
+    // eslint-disable-next-line no-console
+    console.log('[dsh-llm-cost] shell.overlay declared — registering pill')
+    return ctx.slots.register({
+      name: 'shell.overlay',
+      id: 'llm-cost-total',
+    }, CostPill)
+  })
 }
