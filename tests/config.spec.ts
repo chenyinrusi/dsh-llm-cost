@@ -43,6 +43,20 @@ test('pricing override accepts a full registry', () => {
   assert.equal(pricing.models['deepseek-v4-flash'].inputPerM, 1)
 })
 
+test('pricing entry preserves offPeakFactor (was stripped before the P1 fix)', () => {
+  const out = parse({
+    pricing: {
+      version: 1,
+      models: { 'deepseek-v4-flash': { inputPerM: 0.44, outputPerM: 1.32, offPeakFactor: 0.5 } },
+    },
+  })
+  assert.ok(out.ok)
+  const pricing = (out.data as {
+    pricing: { models: Record<string, { offPeakFactor?: number }> }
+  }).pricing
+  assert.equal(pricing.models['deepseek-v4-flash'].offPeakFactor, 0.5)
+})
+
 test('pricing registry rejects a non-number version', () => {
   assert.equal(parse({ pricing: { version: '1', models: {} } }).ok, false)
 })

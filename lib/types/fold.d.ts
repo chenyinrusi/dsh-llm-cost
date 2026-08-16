@@ -72,6 +72,17 @@ export interface MinimalEvent {
     time?: number;
 }
 export declare function initCostState(): CostProjectionState;
+/** Recompute every aggregate from the step ledger (deterministic, order-stable). */
+export declare function recomputeTotals(steps: readonly StepCostRecord[]): {
+    totalCostUsd: number;
+    pricedSteps: number;
+    unpricedSteps: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+    byModel: ModelCostAggregate[];
+};
 /**
  * Fold one event into the cost state.
  *

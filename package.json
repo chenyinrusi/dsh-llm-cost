@@ -1,6 +1,6 @@
 {
   "name": "dsh-llm-cost",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Per-turn, per-step LLM cost metering for DeepSeek Harness: a costUsage session projection, a cost line under each message, and an LLM+web price auto-maintenance tool.",
   "license": "MIT",
   "author": "Chen (Jarry) Pan",

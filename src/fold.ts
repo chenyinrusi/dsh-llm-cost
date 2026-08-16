@@ -107,7 +107,7 @@ export function initCostState(): CostProjectionState {
 }
 
 /** Recompute every aggregate from the step ledger (deterministic, order-stable). */
-function recomputeTotals(steps: readonly StepCostRecord[]): {
+export function recomputeTotals(steps: readonly StepCostRecord[]): {
   totalCostUsd: number
   pricedSteps: number
   unpricedSteps: number
@@ -166,6 +166,57 @@ function recomputeTotals(steps: readonly StepCostRecord[]): {
 }
 
 /**
+ * Incremental per-model aggregation helpers. They mirror `recomputeTotals`
+ * exactly but mutate a copy of the current aggregation, so `applyCostEvent`
+ * stays O(distinct models) instead of rescanning the whole step ledger on every
+ * usage event (O(n²) over a session).
+ */
+function modelKey(record: StepCostRecord): string {
+  return record.model ?? 'unknown'
+}
+
+function addStepToAgg(byModel: ModelCostAggregate[], record: StepCostRecord): ModelCostAggregate[] {
+  const key = modelKey(record)
+  const idx = byModel.findIndex((agg) => agg.model === key)
+  const next = byModel.slice()
+  if (idx === -1) {
+    next.push({
+      model: key,
+      provider: record.provider,
+      calls: 1,
+      costUsd: record.costUsd ?? 0,
+      inputTokens: record.inputTokens,
+      outputTokens: record.outputTokens,
+    })
+    return next.sort((a, b) => b.costUsd - a.costUsd)
+  }
+  const agg = { ...next[idx] }
+  agg.calls += 1
+  agg.costUsd += record.costUsd ?? 0
+  agg.inputTokens += record.inputTokens
+  agg.outputTokens += record.outputTokens
+  next[idx] = agg
+  return next.sort((a, b) => b.costUsd - a.costUsd)
+}
+
+function removeStepFromAgg(byModel: ModelCostAggregate[], record: StepCostRecord): ModelCostAggregate[] {
+  const idx = byModel.findIndex((agg) => agg.model === modelKey(record))
+  if (idx === -1) return byModel
+  const next = byModel.slice()
+  const agg = { ...next[idx] }
+  agg.calls -= 1
+  agg.costUsd -= record.costUsd ?? 0
+  agg.inputTokens -= record.inputTokens
+  agg.outputTokens -= record.outputTokens
+  if (agg.calls <= 0) {
+    next.splice(idx, 1)
+    return next
+  }
+  next[idx] = agg
+  return next.sort((a, b) => b.costUsd - a.costUsd)
+}
+
+/**
  * Fold one event into the cost state.
  *
  * `request/context` is the authoritative resolved route (post-fallback);
@@ -213,13 +264,52 @@ export function applyCostEvent(
   }
 
   const last = state.lastStep
-  const steps = last !== null && last.turn === turn && last.step === step
+  const replacing = last !== null && last.turn === turn && last.step === step
+
+  // Incremental scalar totals: back out the replaced step's contribution, then
+  // add the new one (no full-ledger rescan).
+  let totalCostUsd = state.totalCostUsd
+  let pricedSteps = state.pricedSteps
+  let unpricedSteps = state.unpricedSteps
+  let inputTokens = state.inputTokens
+  let outputTokens = state.outputTokens
+  let cacheReadTokens = state.cacheReadTokens
+  let cacheWriteTokens = state.cacheWriteTokens
+
+  if (replacing && last !== null) {
+    if (last.record.costUsd === null) unpricedSteps -= 1
+    else { pricedSteps -= 1; totalCostUsd -= last.record.costUsd }
+    inputTokens -= last.record.inputTokens
+    outputTokens -= last.record.outputTokens
+    cacheReadTokens -= last.record.cacheReadTokens
+    cacheWriteTokens -= last.record.cacheWriteTokens
+  }
+  if (record.costUsd === null) unpricedSteps += 1
+  else { pricedSteps += 1; totalCostUsd += record.costUsd }
+  inputTokens += record.inputTokens
+  outputTokens += record.outputTokens
+  cacheReadTokens += record.cacheReadTokens
+  cacheWriteTokens += record.cacheWriteTokens
+
+  // Incremental per-model aggregation.
+  let byModel = state.byModel
+  if (replacing && last !== null) byModel = removeStepFromAgg(byModel, last.record)
+  byModel = addStepToAgg(byModel, record)
+
+  const steps = replacing
     ? state.steps.slice(0, -1).concat([record])
     : state.steps.concat([record])
 
   return {
     route,
-    ...recomputeTotals(steps),
+    totalCostUsd,
+    pricedSteps,
+    unpricedSteps,
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    byModel,
     steps,
     lastStep: { turn, step, record },
   }

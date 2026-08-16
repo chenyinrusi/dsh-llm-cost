@@ -12,10 +12,13 @@ export interface RefreshedEntry {
     cacheReadPerM?: number;
     cacheWritePerM?: number;
     cacheWrite1hPerM?: number;
+    offPeakFactor?: number;
     effectiveDate?: string;
     notes?: string;
 }
-/** Build one search query over the target models (bounded to keep it sane). */
+/** Max models priced in one refresh call — bounds the search query while still covering every model in the built-in snapshot. */
+export declare const MAX_MODELS_PER_REFRESH = 24;
+/** Build one search query over the target models (already capped by the caller). */
 export declare function buildSearchQuery(models: readonly string[]): string;
 /**
  * Build the extraction prompt handed to the LLM. It is asked to answer with a
@@ -28,7 +31,10 @@ export interface RefreshedPricing {
 }
 /** Parse + leniently validate the LLM's JSON answer. Never throws. */
 export declare function parseRefreshedPricing(text: string): RefreshedPricing;
-/** Merge refreshed entries into a registry, returning the updated model ids. */
-export declare function applyRefreshed(registry: {
-    models: Record<string, PricingEntry>;
-}, refreshed: RefreshedPricing): string[];
+/**
+ * Merge refreshed entries into a model map (the refresh-delta layer), returning
+ * the updated model ids. Mutates the given map in place; callers are expected to
+ * hand it the delta layer — NOT the final merged registry — so a refresh never
+ * clobbers the user's `config.pricing` overrides (which sit above the deltas).
+ */
+export declare function applyRefreshed(models: Record<string, PricingEntry>, refreshed: RefreshedPricing): string[];

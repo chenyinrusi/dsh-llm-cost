@@ -38,6 +38,7 @@ export declare const Config: z.ZodDefault<z.ZodObject<{
             batchInputPerM: z.ZodOptional<z.ZodNumber>;
             batchOutputPerM: z.ZodOptional<z.ZodNumber>;
             contextCacheStoragePerMPerHr: z.ZodOptional<z.ZodNumber>;
+            offPeakFactor: z.ZodOptional<z.ZodNumber>;
             effectiveDate: z.ZodOptional<z.ZodString>;
             notes: z.ZodOptional<z.ZodString>;
         }, z.core.$strip>>;

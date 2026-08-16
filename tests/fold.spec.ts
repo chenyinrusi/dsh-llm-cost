@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   applyCostEvent,
   initCostState,
+  recomputeTotals,
   viewCostState,
 } from '../src/fold.ts'
 
@@ -113,4 +114,43 @@ test('request/header backfills the route only before any request/context', () =>
   const view2 = viewCostState(state)
   assert.equal(view2.steps[1].model, 'gpt-99')
   assert.equal(view2.steps[1].costUsd, null)
+})
+
+test('incremental aggregates match a full recompute over a mixed sequence', () => {
+  const multi = {
+    version: 1,
+    models: {
+      'deepseek-v4-flash': { provider: 'deepseek', inputPerM: 1, outputPerM: 2, cacheReadPerM: 0.5 },
+      'gpt-x': { provider: 'openai', inputPerM: 2, outputPerM: 4 },
+    },
+  }
+  let state = initCostState()
+  const route = (provider: string, model: string) =>
+    (s: typeof state) => applyCostEvent(s, { type: 'request/context', data: { provider, model } }, multi)
+  const step = (turn: number, step: number, usage: Record<string, number>) =>
+    (s: typeof state) => applyCostEvent(s, {
+      type: 'assistant/message',
+      data: { turn, step, usage },
+    }, multi)
+
+  state = route('deepseek', 'deepseek-v4-flash')(state)
+  state = step(1, 1, { inputTokens: 1000, outputTokens: 500, cacheReadTokens: 2000 })(state)
+  state = step(1, 2, { inputTokens: 0, outputTokens: 500 })(state)
+  state = route('openai', 'gpt-x')(state)
+  state = step(2, 1, { inputTokens: 3000, outputTokens: 1000 })(state)
+  // Replace step 2,1 (usage chunk then final message pattern across a route).
+  state = step(2, 1, { inputTokens: 3000, outputTokens: 2000 })(state)
+  state = route('openai', 'gpt-unknown')(state)
+  state = step(2, 2, { inputTokens: 10, outputTokens: 10 })(state)
+
+  const view = viewCostState(state)
+  const expected = recomputeTotals(view.steps)
+  assert.equal(view.totalCostUsd, expected.totalCostUsd)
+  assert.equal(view.pricedSteps, expected.pricedSteps)
+  assert.equal(view.unpricedSteps, expected.unpricedSteps)
+  assert.equal(view.inputTokens, expected.inputTokens)
+  assert.equal(view.outputTokens, expected.outputTokens)
+  assert.equal(view.cacheReadTokens, expected.cacheReadTokens)
+  assert.equal(view.cacheWriteTokens, expected.cacheWriteTokens)
+  assert.deepEqual(view.byModel, expected.byModel)
 })

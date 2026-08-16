@@ -28,6 +28,7 @@ const PricingEntrySchema = z.object({
   batchInputPerM: z.number().optional(),
   batchOutputPerM: z.number().optional(),
   contextCacheStoragePerMPerHr: z.number().optional(),
+  offPeakFactor: z.number().optional(),
   effectiveDate: z.string().optional(),
   notes: z.string().optional(),
 })

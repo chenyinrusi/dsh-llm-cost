@@ -14,13 +14,17 @@ export interface RefreshedEntry {
   cacheReadPerM?: number
   cacheWritePerM?: number
   cacheWrite1hPerM?: number
+  offPeakFactor?: number
   effectiveDate?: string
   notes?: string
 }
 
-/** Build one search query over the target models (bounded to keep it sane). */
+/** Max models priced in one refresh call — bounds the search query while still covering every model in the built-in snapshot. */
+export const MAX_MODELS_PER_REFRESH = 24
+
+/** Build one search query over the target models (already capped by the caller). */
 export function buildSearchQuery(models: readonly string[]): string {
-  const targets = models.slice(0, 12).join('" OR "')
+  const targets = models.join('" OR "')
   return `current API price per million tokens 2026: "${targets}" input output cache`
 }
 
@@ -84,9 +88,11 @@ function normalizeEntry(raw: unknown): RefreshedEntry | null {
   const cacheReadPerM = toNumber(record.cacheReadPerM)
   const cacheWritePerM = toNumber(record.cacheWritePerM)
   const cacheWrite1hPerM = toNumber(record.cacheWrite1hPerM)
+  const offPeakFactor = toNumber(record.offPeakFactor)
   if (cacheReadPerM !== null) entry.cacheReadPerM = cacheReadPerM
   if (cacheWritePerM !== null) entry.cacheWritePerM = cacheWritePerM
   if (cacheWrite1hPerM !== null) entry.cacheWrite1hPerM = cacheWrite1hPerM
+  if (offPeakFactor !== null) entry.offPeakFactor = offPeakFactor
   if (typeof record.effectiveDate === 'string') entry.effectiveDate = record.effectiveDate
   if (typeof record.notes === 'string') entry.notes = record.notes
   return entry
@@ -119,14 +125,19 @@ export function parseRefreshedPricing(text: string): RefreshedPricing {
   return { models }
 }
 
-/** Merge refreshed entries into a registry, returning the updated model ids. */
+/**
+ * Merge refreshed entries into a model map (the refresh-delta layer), returning
+ * the updated model ids. Mutates the given map in place; callers are expected to
+ * hand it the delta layer — NOT the final merged registry — so a refresh never
+ * clobbers the user's `config.pricing` overrides (which sit above the deltas).
+ */
 export function applyRefreshed(
-  registry: { models: Record<string, PricingEntry> },
+  models: Record<string, PricingEntry>,
   refreshed: RefreshedPricing,
 ): string[] {
   const updated: string[] = []
   for (const [model, entry] of Object.entries(refreshed.models)) {
-    registry.models[model] = entry
+    models[model] = entry
     updated.push(model)
   }
   return updated
