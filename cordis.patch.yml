@@ -1,0 +1,7 @@
+# dsh-llm-cost: contribute one loader row mounting this plugin.
+# Optional config (all defaults apply when omitted): pricing, pricingFile,
+# refreshProvider, refreshModel. Do not write an empty `config:` key — YAML
+# parses it as null, which fails this plugin's Config schema loudly.
+- insert:
+    - id: llm-cost
+      name: dsh-llm-cost
