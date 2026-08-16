@@ -1,18 +1,23 @@
 /**
  * Client plugin for dsh-llm-cost: renders the turn's dollar cost under each
  * completed assistant message (the `conversation.chat.turnTail` chain) and the
- * session's cumulative total in the header utilities row.
+ * session's cumulative total as a floating pill in the bottom-left corner of
+ * the frame (`shell.overlay`), expanding to the per-model breakdown on hover.
  *
  * Unpriced models are rendered as "unknown" — never a misleading $0.00.
  */
 
-import { createElement } from 'react'
+import { createElement, useState } from 'react'
+import type { CSSProperties } from 'react'
 import type {
   ClientContext,
   UseProjection,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+// Type-only: loads ui-layout's SlotMap augmentation so 'shell.overlay' is a
+// valid slot key in this client program (the slot is declared by that package).
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '../projection.ts'
 
 export const inject = ['slots']
@@ -62,24 +67,97 @@ function CostTailView({ turn, matched, useProjection }: CostTailProps) {
   return createElement('div', { 'data-llm-cost': turn.turn }, parts.join(' · '))
 }
 
-type SessionCostProps = PropsRuntime<'conversation.session.header.utilities'>
+type CostPillProps = PropsRuntime<'shell.overlay'>
+
+const PILL_STYLE: CSSProperties = {
+  position: 'absolute',
+  left: 16,
+  bottom: 16,
+  display: 'inline-flex',
+  alignItems: 'center',
+  maxWidth: 'min(320px, 40vw)',
+  padding: '4px 10px',
+  borderRadius: 999,
+  fontSize: 12,
+  lineHeight: '18px',
+  color: 'var(--dsw-alias-label-primary, rgba(15, 15, 15, 0.92))',
+  background: 'var(--dsw-alias-interactive-bg-hover, rgba(128, 128, 128, 0.16))',
+  border: '1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.35))',
+  cursor: 'default',
+  userSelect: 'none',
+  whiteSpace: 'nowrap',
+}
+
+const POPOVER_STYLE: CSSProperties = {
+  position: 'absolute',
+  left: 0,
+  bottom: 'calc(100% + 8px)',
+  minWidth: 240,
+  padding: '10px 12px',
+  borderRadius: 10,
+  fontSize: 12,
+  lineHeight: '18px',
+  color: 'var(--dsw-alias-label-primary, rgba(15, 15, 15, 0.92))',
+  background: 'var(--dsw-alias-surface-overlay, #ffffff)',
+  border: '1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.35))',
+  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.18)',
+  whiteSpace: 'nowrap',
+}
+
+const POPOVER_TITLE_STYLE: CSSProperties = {
+  fontWeight: 600,
+  marginBottom: 4,
+}
+
+const POPOVER_META_STYLE: CSSProperties = {
+  opacity: 0.72,
+  marginBottom: 4,
+}
+
+const POPOVER_ROW_STYLE: CSSProperties = {
+  marginTop: 2,
+}
 
 /**
- * Session-header cumulative total: the whole session's dollar cost so far, read
- * from the same `costUsage` projection the per-turn tails use. Renders nothing
- * until the session has at least one metered step.
+ * Bottom-left cumulative cost pill: an always-visible session total that
+ * expands to the per-model breakdown on hover/focus. `shell.overlay` is
+ * root-scoped, so it carries no `useProjection` seat — the current session's
+ * `costUsage` is read through the global `useSessions` store instead.
  */
-function SessionCostBadge({ useProjection }: SessionCostProps) {
-  const cost = useProjection('costUsage')
+function CostPill({ useSessions }: CostPillProps) {
+  const [open, setOpen] = useState(false)
+  const cost = useSessions((s) => {
+    const id = s.current
+    return id === undefined ? undefined : s.byId[id]?.projectionValues?.costUsage
+  })
   if (cost === undefined || cost.pricedSteps + cost.unpricedSteps === 0) return null
 
   const tokens = cost.inputTokens + cost.outputTokens + cost.cacheReadTokens + cost.cacheWriteTokens
-  const title = `${cost.pricedSteps} priced · ${cost.unpricedSteps} unknown · ${formatTokens(tokens)} tokens`
   const label = cost.unpricedSteps > 0
     ? `${formatUsd(cost.totalCostUsd)} + ${cost.unpricedSteps} unknown`
     : formatUsd(cost.totalCostUsd)
 
-  return createElement('span', { 'data-llm-cost-session': 'total', title }, label)
+  return createElement('div', {
+    'data-llm-cost-session': 'total',
+    tabIndex: 0,
+    style: PILL_STYLE,
+    onMouseEnter: () => { setOpen(true) },
+    onMouseLeave: () => { setOpen(false) },
+    onFocus: () => { setOpen(true) },
+    onBlur: () => { setOpen(false) },
+  },
+    createElement('span', null, label),
+    open && createElement('div', { style: POPOVER_STYLE },
+      createElement('div', { style: POPOVER_TITLE_STYLE }, label),
+      createElement('div', { style: POPOVER_META_STYLE },
+        `${cost.pricedSteps} priced · ${cost.unpricedSteps} unknown · ${formatTokens(tokens)} tokens`),
+      cost.byModel.map((entry) => createElement('div', {
+        key: entry.model,
+        style: POPOVER_ROW_STYLE,
+      },
+        `${entry.model} × ${entry.calls} — ${formatUsd(entry.costUsd)} · ${formatTokens(entry.inputTokens + entry.outputTokens)} tok`)),
+    ),
+  )
 }
 
 export function apply(ctx: ClientContext): void {
@@ -88,8 +166,8 @@ export function apply(ctx: ClientContext): void {
     select: (owner: TurnTailOwnerProps) => ({ turn: owner.turn.turn }),
   }, CostTailView))
 
-  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
-    name: 'conversation.session.header.utilities',
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
     id: 'llm-cost-total',
-  }, SessionCostBadge))
+  }, CostPill))
 }
