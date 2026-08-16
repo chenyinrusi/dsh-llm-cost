@@ -1,13 +1,14 @@
 /**
  * Client plugin for dsh-llm-cost: renders the turn's dollar cost under each
  * completed assistant message (the `conversation.chat.turnTail` chain) and the
- * session's cumulative total as a floating pill in the bottom-left corner of
- * the frame (`shell.overlay`), expanding to the per-model breakdown on hover.
+ * session's cumulative total as a floating pill at the conversation column's
+ * bottom-left (`shell.overlay`, offset past the sidebar), expanding to the
+ * per-model breakdown on hover.
  *
  * Unpriced models are rendered as "unknown" — never a misleading $0.00.
  */
 
-import { createElement, useState } from 'react'
+import { createElement, useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type {
   ClientContext,
@@ -71,9 +72,7 @@ type CostPillProps = PropsRuntime<'shell.overlay'>
 
 const PILL_STYLE: CSSProperties = {
   position: 'fixed',
-  left: 16,
   bottom: 16,
-  zIndex: 9999,
   display: 'inline-flex',
   alignItems: 'center',
   maxWidth: 'min(320px, 40vw)',
@@ -127,37 +126,47 @@ const POPOVER_ROW_STYLE: CSSProperties = {
  */
 function CostPill({ useSessions }: CostPillProps) {
   const [open, setOpen] = useState(false)
+  // shell.overlay is frame-wide, so the pill anchors past the left sidebar to
+  // sit at the conversation column's bottom-left rather than the viewport's.
+  const [left, setLeft] = useState(296) // SIDEBAR_DEFAULT (280) + 16
   const cost = useSessions((s) => {
     const id = s.current
     return id === undefined ? undefined : s.byId[id]?.projectionValues?.costUsage
   })
 
-  // Diagnostic: always render something so mount vs data vs position is
-  // distinguishable without a debugger. `totalCostUsd === undefined` means the
-  // cumulative fields did not reach the client even though `steps` did.
-  let label: string
-  if (cost === undefined) label = 'llm-cost: NO DATA'
-  else if (cost.totalCostUsd === undefined) label = 'llm-cost: NO CUMULATIVE FIELDS'
-  else if (cost.pricedSteps + cost.unpricedSteps === 0) label = 'llm-cost: 0 STEPS'
-  else label = cost.unpricedSteps > 0
+  useEffect(() => {
+    const frame = document.querySelector('[data-shell-overlay]')?.parentElement
+    const sidebar = frame?.firstElementChild
+    if (frame == null || sidebar == null) return
+    const update = (): void => { setLeft(sidebar.getBoundingClientRect().width + 16) }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(sidebar)
+    return () => { observer.disconnect() }
+  }, [])
+
+  if (cost === undefined || cost.totalCostUsd === undefined || cost.pricedSteps + cost.unpricedSteps === 0) return null
+
+  const tokens = cost.inputTokens + cost.outputTokens + cost.cacheReadTokens + cost.cacheWriteTokens
+  const label = cost.unpricedSteps > 0
     ? `${formatUsd(cost.totalCostUsd)} + ${cost.unpricedSteps} unknown`
     : formatUsd(cost.totalCostUsd)
 
   return createElement('div', {
     'data-llm-cost-session': 'total',
     tabIndex: 0,
-    style: PILL_STYLE,
+    style: { ...PILL_STYLE, left },
     onMouseEnter: () => { setOpen(true) },
     onMouseLeave: () => { setOpen(false) },
     onFocus: () => { setOpen(true) },
     onBlur: () => { setOpen(false) },
   },
     createElement('span', null, label),
-    open && cost !== undefined && createElement('div', { style: POPOVER_STYLE },
+    open && createElement('div', { style: POPOVER_STYLE },
       createElement('div', { style: POPOVER_TITLE_STYLE }, label),
       createElement('div', { style: POPOVER_META_STYLE },
-        `${cost.pricedSteps ?? '?'} priced · ${cost.unpricedSteps ?? '?'} unknown · ${formatTokens((cost.inputTokens ?? 0) + (cost.outputTokens ?? 0) + (cost.cacheReadTokens ?? 0) + (cost.cacheWriteTokens ?? 0))} tokens`),
-      (cost.byModel ?? []).map((entry) => createElement('div', {
+        `${cost.pricedSteps} priced · ${cost.unpricedSteps} unknown · ${formatTokens(tokens)} tokens`),
+      cost.byModel.map((entry) => createElement('div', {
         key: entry.model,
         style: POPOVER_ROW_STYLE,
       },
@@ -167,20 +176,13 @@ function CostPill({ useSessions }: CostPillProps) {
 }
 
 export function apply(ctx: ClientContext): void {
-  // eslint-disable-next-line no-console
-  console.log('[dsh-llm-cost] client apply() running')
-
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
     name: 'conversation.chat.turnTail',
     select: (owner: TurnTailOwnerProps) => ({ turn: owner.turn.turn }),
   }, CostTailView))
 
-  ctx.slots.inject('shell.overlay', () => {
-    // eslint-disable-next-line no-console
-    console.log('[dsh-llm-cost] shell.overlay declared — registering pill')
-    return ctx.slots.register({
-      name: 'shell.overlay',
-      id: 'llm-cost-total',
-    }, CostPill)
-  })
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'llm-cost-total',
+  }, CostPill))
 }
