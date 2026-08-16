@@ -28,6 +28,15 @@ export interface ExtractionCandidate {
 export declare function extractionRank(registry: PricingRegistry, provider: string, model: string): number;
 /** Sort candidates cheapest-first (free, priced ascending, unknown last, stable tie-break). */
 export declare function sortExtractionCandidates(registry: PricingRegistry, candidates: readonly ExtractionCandidate[]): ExtractionCandidate[];
+/**
+ * Build the full ordered candidate chain: `prefer` first (in order, e.g. the
+ * explicit config route then the last-successful model), then the remaining
+ * discovered models cheapest-first. Deduplicates by provider+model.
+ */
+export declare function orderExtractionCandidates(registry: PricingRegistry, discovered: readonly ExtractionCandidate[], prefer?: readonly {
+    provider: string;
+    model: string;
+}[]): ExtractionCandidate[];
 /** Build one search query over the target models (already capped by the caller). */
 export declare function buildSearchQuery(models: readonly string[]): string;
 /**

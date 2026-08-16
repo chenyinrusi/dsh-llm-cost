@@ -4,6 +4,7 @@ import {
   applyRefreshed,
   buildSearchQuery,
   extractionRank,
+  orderExtractionCandidates,
   parseRefreshedPricing,
   sortExtractionCandidates,
 } from '../src/refresh.ts'
@@ -88,4 +89,31 @@ test('extractionRank: free = 0, priced = input+output, unknown = MAX_SAFE_INTEGE
   assert.equal(extractionRank(registry, 'ollama', 'anything'), 0)
   assert.equal(extractionRank(registry, 'x', 'm'), 5)
   assert.equal(extractionRank(registry, 'x', 'nope'), Number.MAX_SAFE_INTEGER)
+})
+
+test('orderExtractionCandidates: prefer first, then cheapest-first, deduped', () => {
+  const registry = {
+    version: 1,
+    models: {
+      expensive: { inputPerM: 10, outputPerM: 20 },
+      cheap: { inputPerM: 0.1, outputPerM: 0.2 },
+    },
+  }
+  const discovered = [
+    { provider: 'deepseek', model: 'expensive', label: 'deepseek/expensive' },
+    { provider: 'ollama', model: 'llama3', label: 'ollama/llama3' },
+    { provider: 'deepseek', model: 'cheap', label: 'deepseek/cheap' },
+    { provider: 'openai', model: 'mystery', label: 'openai/mystery' },
+  ]
+  const ordered = orderExtractionCandidates(registry, discovered, [
+    { provider: 'openai', model: 'gpt-x' }, // config (explicit) — not in discovered
+    { provider: 'deepseek', model: 'cheap' }, // last success — also in discovered
+  ])
+  assert.deepEqual(ordered.map((c) => c.label), [
+    'openai/gpt-x', // preferred: config
+    'deepseek/cheap', // preferred: last success (deduped below)
+    'ollama/llama3', // free
+    'deepseek/expensive', // 30
+    'openai/mystery', // unknown
+  ])
 })

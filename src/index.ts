@@ -24,14 +24,21 @@ import {
   buildExtractPrompt,
   buildSearchQuery,
   MAX_MODELS_PER_REFRESH,
+  orderExtractionCandidates,
   parseRefreshedPricing,
-  sortExtractionCandidates,
 } from './refresh.ts'
 import type { ExtractionCandidate } from './refresh.ts'
 
 export const name = 'llm-cost'
 
 const DEFAULT_PRICING_FILE = join(homedir(), '.dsh', 'llm-cost', 'pricing.override.json')
+
+/** On-disk shape of the override file: refresh deltas plus the last extraction route. */
+interface PersistedOverride {
+  version: number
+  models: Record<string, PricingEntry>
+  lastExtraction?: { provider: string; model: string }
+}
 
 /**
  * Assemble the effective registry from three layers, lowest priority first:
@@ -54,6 +61,9 @@ export function apply(ctx: Context, config: LlmCostConfig = {}): void {
   // is what let stale prices shadow future snapshot updates). config.pricing
   // sits above it, so a refresh can never overwrite a user override.
   const refreshed: Record<string, PricingEntry> = {}
+  // Remembers the model that last extracted prices successfully, so the next
+  // refresh tries it first (before the cheapest-first auto chain).
+  const meta: { lastExtraction?: { provider: string; model: string } } = {}
   const holder: { registry: PricingRegistry } = {
     registry: buildRegistry(config.pricing, refreshed),
   }
@@ -66,8 +76,9 @@ export function apply(ctx: Context, config: LlmCostConfig = {}): void {
   // missing file is normal (first boot); a corrupt one is non-fatal but surfaced.
   void readFile(pricingFile, 'utf8')
     .then((text) => {
-      const parsed = JSON.parse(text) as PricingRegistry
+      const parsed = JSON.parse(text) as PersistedOverride
       Object.assign(refreshed, parsed.models)
+      if (parsed.lastExtraction !== undefined) meta.lastExtraction = parsed.lastExtraction
       rebuild()
     })
     .catch((err: unknown) => {
@@ -85,7 +96,7 @@ export function apply(ctx: Context, config: LlmCostConfig = {}): void {
   // Optional capability: the auto-maintenance tool, only where tools + an LLM
   // + a web provider are all mounted.
   ctx.inject(['tools', 'llm', 'web'], (toolCtx) => {
-    registerRefreshTool(toolCtx, holder, refreshed, pricingFile, config, rebuild)
+    registerRefreshTool(toolCtx, holder, refreshed, meta, pricingFile, config, rebuild)
   })
 }
 
@@ -93,6 +104,7 @@ function registerRefreshTool(
   ctx: Context,
   holder: { registry: PricingRegistry },
   refreshed: Record<string, PricingEntry>,
+  meta: { lastExtraction?: { provider: string; model: string } },
   pricingFile: string,
   config: LlmCostConfig,
   rebuild: () => void,
@@ -133,7 +145,7 @@ function registerRefreshTool(
 
       // Resolve the extraction chain BEFORE spending a search round-trip: there
       // is no point searching when nothing can turn the results into a table.
-      const candidates = await resolveExtractionCandidates(ctx, holder, config)
+      const candidates = await resolveExtractionCandidates(ctx, holder, config, meta.lastExtraction)
       if (candidates.length === 0) {
         throw new Error(
           'llm-cost refresh: no LLM model is available to extract prices '
@@ -152,10 +164,11 @@ function registerRefreshTool(
         throw new Error('llm-cost refresh: every available model failed to extract prices')
       }
 
+      meta.lastExtraction = { provider: result.provider, model: result.model }
       const parsed = parseRefreshedPricing(result.outputText)
       const updated = applyRefreshed(refreshed, parsed)
       rebuild()
-      await persistRegistry(pricingFile, refreshed, holder.registry.version)
+      await persistRegistry(pricingFile, refreshed, holder.registry.version, meta.lastExtraction)
       console.info(`[dsh-llm-cost] refreshed ${updated.length} price(s) via ${result.label}`)
       return { updatedModels: updated, count: updated.length }
     },
@@ -164,27 +177,22 @@ function registerRefreshTool(
 
 /**
  * Build the ordered extraction-candidate chain: the explicit
- * `refreshProvider`/`refreshModel` first (user intent), then every model the
- * harness can currently reach, cheapest first (unknown-priced models last).
- * A provider whose catalog query fails simply contributes no candidates.
+ * `refreshProvider`/`refreshModel` first (user intent), then the model that
+ * last succeeded (memory), then every model the harness can currently reach,
+ * cheapest first (unknown-priced models last). A provider whose catalog query
+ * fails simply contributes no candidates.
  */
 async function resolveExtractionCandidates(
   ctx: Context,
   holder: { registry: PricingRegistry },
   config: LlmCostConfig,
+  lastExtraction?: { provider: string; model: string },
 ): Promise<ExtractionCandidate[]> {
-  const seen = new Set<string>()
-  const candidates: ExtractionCandidate[] = []
-  const push = (provider: string, model: string): void => {
-    const key = `${provider}\u0000${model}`
-    if (seen.has(key)) return
-    seen.add(key)
-    candidates.push({ provider, model, label: `${provider}/${model}` })
-  }
-
+  const prefer: { provider: string; model: string }[] = []
   if (config.refreshProvider !== undefined && config.refreshModel !== undefined) {
-    push(config.refreshProvider, config.refreshModel)
+    prefer.push({ provider: config.refreshProvider, model: config.refreshModel })
   }
+  if (lastExtraction !== undefined) prefer.push(lastExtraction)
 
   const discovered: ExtractionCandidate[] = []
   for (const provider of ctx.llm.listProviders()) {
@@ -198,10 +206,7 @@ async function resolveExtractionCandidates(
       discovered.push({ provider: provider.id, model: model.id, label: `${provider.id}/${model.id}` })
     }
   }
-  for (const candidate of sortExtractionCandidates(holder.registry, discovered)) {
-    push(candidate.provider, candidate.model)
-  }
-  return candidates
+  return orderExtractionCandidates(holder.registry, discovered, prefer)
 }
 
 /**
@@ -279,7 +284,11 @@ async function persistRegistry(
   pricingFile: string,
   models: Record<string, PricingEntry>,
   version: number,
+  lastExtraction?: { provider: string; model: string },
 ): Promise<void> {
   await mkdir(dirname(pricingFile), { recursive: true })
-  await writeFile(pricingFile, JSON.stringify({ version, models }, null, 2) + '\n', 'utf8')
+  const payload: PersistedOverride = lastExtraction === undefined
+    ? { version, models }
+    : { version, models, lastExtraction }
+  await writeFile(pricingFile, JSON.stringify(payload, null, 2) + '\n', 'utf8')
 }

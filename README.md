@@ -26,10 +26,10 @@ DSH 已经精确记录了每个 step 的真实 token 用量（`assistant/message
 
 ```bash
 # git（推荐：lib/ 已提交，免本地构建）
-dsh plugin --profile web add github:chenyinrusi/dsh-llm-cost#v0.3.0
+dsh plugin --profile web add github:chenyinrusi/dsh-llm-cost#v0.3.1
 
 # 本地 tarball（内网 / 离线）
-dsh plugin --profile web add ./dsh-llm-cost-0.3.0.tgz
+dsh plugin --profile web add ./dsh-llm-cost-0.3.1.tgz
 ```
 
 > npm 渠道暂未发布。如需 `dsh plugin --profile web add dsh-llm-cost`，先在仓库跑 `npm login && npm publish`。
@@ -54,7 +54,7 @@ dsh plugin --profile web add ./dsh-llm-cost-0.3.0.tgz
 这个工具**自己调用 LLM + 联网**完成整条链路，不需要 agent 逐步编排：
 
 1. `ctx.web.search` 对目标模型搜索「current API price per million tokens」；
-2. 用**最便宜优先的 fallback 链**抽取：先试 `refreshProvider`/`refreshModel`（若配置），再自动枚举 `ctx.llm.listProviders()` + `listModels()` 里所有可用模型，按单价排序（免费/最便宜在前，未标价最后），**一个失败就换下一个**；
+2. 用**记忆 + 最便宜优先的 fallback 链**抽取：先试 `refreshProvider`/`refreshModel`（若配置），再试**上一次成功的模型**（持久化记住），然后自动枚举 `ctx.llm.listProviders()` + `listModels()` 里所有可用模型，按单价排序（免费/最便宜在前，未标价最后），**一个失败就换下一个**；
 3. 宽松校验（坏模型直接丢弃，绝不污染价格表）→ 合并进 registry → 写 `pricingFile`。
 
 前置：DSH 里要装一个 web 搜索 provider（`dsh-web-search-*`）+ 至少一个可用的 LLM 路由。`refreshProvider`/`refreshModel` **不再是必须**——不配也能自动挑最便宜的可用模型。抽取结果建议先人工抽查——它写的是 override 文件，**不会**覆盖内置快照。

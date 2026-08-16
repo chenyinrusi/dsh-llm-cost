@@ -51,6 +51,31 @@ export function sortExtractionCandidates(
   })
 }
 
+/**
+ * Build the full ordered candidate chain: `prefer` first (in order, e.g. the
+ * explicit config route then the last-successful model), then the remaining
+ * discovered models cheapest-first. Deduplicates by provider+model.
+ */
+export function orderExtractionCandidates(
+  registry: PricingRegistry,
+  discovered: readonly ExtractionCandidate[],
+  prefer: readonly { provider: string; model: string }[] = [],
+): ExtractionCandidate[] {
+  const seen = new Set<string>()
+  const ordered: ExtractionCandidate[] = []
+  const push = (provider: string, model: string): void => {
+    const key = `${provider}\u0000${model}`
+    if (seen.has(key)) return
+    seen.add(key)
+    ordered.push({ provider, model, label: `${provider}/${model}` })
+  }
+  for (const entry of prefer) push(entry.provider, entry.model)
+  for (const candidate of sortExtractionCandidates(registry, discovered)) {
+    push(candidate.provider, candidate.model)
+  }
+  return ordered
+}
+
 /** Build one search query over the target models (already capped by the caller). */
 export function buildSearchQuery(models: readonly string[]): string {
   const targets = models.join('" OR "')
