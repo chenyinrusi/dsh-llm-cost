@@ -68,6 +68,8 @@ export interface CostProjectionState {
 export interface MinimalEvent {
   type: string
   data: Record<string, unknown>
+  /** Unix epoch ms of the event (from the session log), used for peak/off-peak pricing. */
+  time?: number
 }
 
 function usageOf(event: MinimalEvent):
@@ -196,7 +198,7 @@ export function applyCostEvent(
   const { turn, step, usage } = sample
   const model = route?.model ?? null
   const provider = route?.provider ?? null
-  const { costUsd } = resolveAndCost(registry, model ?? '', provider ?? '', usage)
+  const { costUsd } = resolveAndCost(registry, model ?? '', provider ?? '', usage, event.time)
 
   const record: StepCostRecord = {
     turn,

@@ -38,6 +38,7 @@ const KEY_MAP = {
   batch_input_per_m: 'batchInputPerM',
   batch_output_per_m: 'batchOutputPerM',
   context_cache_storage_per_m_per_hr: 'contextCacheStoragePerMPerHr',
+  off_peak_factor: 'offPeakFactor',
   effective_date: 'effectiveDate',
   notes: 'notes',
 }

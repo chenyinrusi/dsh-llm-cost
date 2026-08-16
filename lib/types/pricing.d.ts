@@ -19,6 +19,8 @@ export interface PricingEntry {
     batchInputPerM?: number;
     batchOutputPerM?: number;
     contextCacheStoragePerMPerHr?: number;
+    /** Off-peak multiplier (e.g. 0.5 = half price). Prices are stored at PEAK rate; off-peak applies this factor. */
+    offPeakFactor?: number;
     effectiveDate?: string;
     notes?: string;
 }
@@ -56,20 +58,25 @@ export type PricingResolution = {
  * @param provider - registered provider route (may be empty).
  */
 export declare function resolvePricing(registry: PricingRegistry, model: string, provider?: string): PricingResolution;
+/** Whether a Unix-epoch-ms timestamp falls in a DeepSeek peak billing window. */
+export declare function isPeak(ms: number): boolean;
+/** Multiplier for one entry at one timestamp: 1 during peak, `offPeakFactor` otherwise. */
+export declare function priceFactor(entry: PricingEntry, atMs: number): number;
 /**
  * Dollar cost of one usage record under one pricing entry.
  *
  * inputTokens is uncached input only (DeepSeek's adapter already subtracts
  * cache hits out of prompt_tokens). reasoning is already inside outputTokens,
  * so it is not added again. batch/storage dimensions are deliberately omitted
- * from the display figure (v1).
+ * from the display figure (v1). When `atMs` is given and the entry declares
+ * `offPeakFactor`, the total is scaled by the factor outside peak windows.
  */
-export declare function costUsd(usage: TokenUsageLike, entry: PricingEntry): number;
+export declare function costUsd(usage: TokenUsageLike, entry: PricingEntry, atMs?: number): number;
 /**
  * Combined resolve + cost. `costUsd` is `null` when the model is unpriced
  * (unknown) — callers render "unknown" rather than a misleading $0.
  */
-export declare function resolveAndCost(registry: PricingRegistry, model: string, provider: string, usage: TokenUsageLike): {
+export declare function resolveAndCost(registry: PricingRegistry, model: string, provider: string, usage: TokenUsageLike, atMs?: number): {
     costUsd: number | null;
     resolution: PricingResolution;
 };

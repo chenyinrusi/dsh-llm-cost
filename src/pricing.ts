@@ -20,6 +20,8 @@ export interface PricingEntry {
   batchInputPerM?: number
   batchOutputPerM?: number
   contextCacheStoragePerMPerHr?: number
+  /** Off-peak multiplier (e.g. 0.5 = half price). Prices are stored at PEAK rate; off-peak applies this factor. */
+  offPeakFactor?: number
   effectiveDate?: string
   notes?: string
 }
@@ -76,21 +78,39 @@ export function resolvePricing(
   return { status: 'unknown', matchedModel: null, match: 'none' }
 }
 
+/** Peak billing windows in UTC hours: 01:00–04:00 and 06:00–10:00 (all else off-peak). */
+const PEAK_WINDOWS: readonly [number, number][] = [[1, 4], [6, 10]]
+
+/** Whether a Unix-epoch-ms timestamp falls in a DeepSeek peak billing window. */
+export function isPeak(ms: number): boolean {
+  const d = new Date(ms)
+  const hour = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600
+  return PEAK_WINDOWS.some(([start, end]) => hour >= start && hour < end)
+}
+
+/** Multiplier for one entry at one timestamp: 1 during peak, `offPeakFactor` otherwise. */
+export function priceFactor(entry: PricingEntry, atMs: number): number {
+  if (entry.offPeakFactor === undefined) return 1
+  return isPeak(atMs) ? 1 : entry.offPeakFactor
+}
+
 /**
  * Dollar cost of one usage record under one pricing entry.
  *
  * inputTokens is uncached input only (DeepSeek's adapter already subtracts
  * cache hits out of prompt_tokens). reasoning is already inside outputTokens,
  * so it is not added again. batch/storage dimensions are deliberately omitted
- * from the display figure (v1).
+ * from the display figure (v1). When `atMs` is given and the entry declares
+ * `offPeakFactor`, the total is scaled by the factor outside peak windows.
  */
-export function costUsd(usage: TokenUsageLike, entry: PricingEntry): number {
+export function costUsd(usage: TokenUsageLike, entry: PricingEntry, atMs?: number): number {
   const perM = (tokens: number, price: number | undefined): number =>
     tokens > 0 && price !== undefined && price > 0 ? (tokens / 1_000_000) * price : 0
-  return perM(usage.inputTokens, entry.inputPerM)
+  const base = perM(usage.inputTokens, entry.inputPerM)
     + perM(usage.cacheReadTokens ?? 0, entry.cacheReadPerM)
     + perM(usage.cacheWriteTokens ?? 0, entry.cacheWritePerM)
     + perM(usage.outputTokens, entry.outputPerM)
+  return atMs === undefined ? base : base * priceFactor(entry, atMs)
 }
 
 /**
@@ -102,11 +122,12 @@ export function resolveAndCost(
   model: string,
   provider: string,
   usage: TokenUsageLike,
+  atMs?: number,
 ): { costUsd: number | null; resolution: PricingResolution } {
   const resolution = resolvePricing(registry, model, provider)
   if (resolution.status === 'unknown') return { costUsd: null, resolution }
   if (resolution.status === 'free') return { costUsd: 0, resolution }
-  return { costUsd: costUsd(usage, resolution.entry), resolution }
+  return { costUsd: costUsd(usage, resolution.entry, atMs), resolution }
 }
 
 /** Merge an optional override over a base registry (shallow, per-model). */

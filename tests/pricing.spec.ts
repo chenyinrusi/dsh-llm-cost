@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   costUsd,
+  isPeak,
   mergeRegistries,
   resolveAndCost,
   resolvePricing,
@@ -78,4 +79,23 @@ test('mergeRegistries overlays per-model entries over the base', () => {
 test('mergeRegistries with no override returns the base reference', () => {
   assert.equal(mergeRegistries(registry, undefined), registry)
   assert.equal(mergeRegistries(registry, null), registry)
+})
+
+test('isPeak detects the peak windows (01:00-04:00, 06:00-10:00 UTC)', () => {
+  const at = (h: number) => Date.UTC(2026, 7, 17, h, 0, 0)
+  assert.equal(isPeak(at(2)), true)   // 02:00 UTC peak
+  assert.equal(isPeak(at(8)), true)   // 08:00 UTC peak
+  assert.equal(isPeak(at(0)), false)  // 00:00 UTC off-peak
+  assert.equal(isPeak(at(5)), false)  // 05:00 UTC off-peak
+  assert.equal(isPeak(at(12)), false) // 12:00 UTC off-peak
+})
+
+test('off-peak factor halves the cost outside peak windows', () => {
+  const entry = { inputPerM: 1, outputPerM: 2, offPeakFactor: 0.5 }
+  const usage = { inputTokens: 1000, outputTokens: 0 }
+  const peakMs = Date.UTC(2026, 7, 17, 2, 0, 0)
+  const offMs = Date.UTC(2026, 7, 17, 12, 0, 0)
+  assert.equal(costUsd(usage, entry, peakMs), 0.001)   // 1000/1e6 * 1
+  assert.equal(costUsd(usage, entry, offMs), 0.0005)   // half during off-peak
+  assert.equal(costUsd(usage, entry), 0.001)           // no timestamp -> base rate
 })

@@ -4,7 +4,7 @@ import type { PricingRegistry } from './pricing.ts'
 
 export const DEFAULT_PRICING: PricingRegistry = {
   "version": 1,
-  "generatedAt": "2026-08-16T08:39:34.624Z",
+  "generatedAt": "2026-08-16T20:35:08.163Z",
   "source": "llm_models.toml [pricing_v2]",
   "models": {
     "claude-fable-5": {
@@ -67,23 +67,21 @@ export const DEFAULT_PRICING: PricingRegistry = {
     },
     "deepseek-v4-flash": {
       "provider": "deepseek",
-      "inputPerM": 0.14,
-      "outputPerM": 0.28,
-      "cacheReadPerM": 0.0028,
-      "batchInputPerM": 0.07,
-      "batchOutputPerM": 0.14,
-      "effectiveDate": "2026-08-03",
-      "notes": "KV Cache auto; cache_hit ~50x cheaper"
+      "inputPerM": 0.44,
+      "outputPerM": 1.32,
+      "cacheReadPerM": 0.014,
+      "offPeakFactor": 0.5,
+      "effectiveDate": "2026-08-17",
+      "notes": "Peak 01:00-04:00 & 06:00-10:00 UTC; off-peak = half. cache miss=input"
     },
     "deepseek-v4-pro": {
       "provider": "deepseek",
-      "inputPerM": 0.435,
-      "outputPerM": 0.87,
-      "cacheReadPerM": 0.003625,
-      "batchInputPerM": 0.2175,
-      "batchOutputPerM": 0.435,
-      "effectiveDate": "2026-08-03",
-      "notes": "DeepSeek V4 Pro; cache_hit ~120x 便宜于 output"
+      "inputPerM": 1.32,
+      "outputPerM": 3.96,
+      "cacheReadPerM": 0.044,
+      "offPeakFactor": 0.5,
+      "effectiveDate": "2026-08-17",
+      "notes": "Peak 01:00-04:00 & 06:00-10:00 UTC; off-peak = half. cache miss=input"
     },
     "gemini-3-flash-preview": {
       "provider": "gemini",

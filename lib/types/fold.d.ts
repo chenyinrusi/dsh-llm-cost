@@ -68,6 +68,8 @@ export interface CostProjectionState {
 export interface MinimalEvent {
     type: string;
     data: Record<string, unknown>;
+    /** Unix epoch ms of the event (from the session log), used for peak/off-peak pricing. */
+    time?: number;
 }
 export declare function initCostState(): CostProjectionState;
 /**

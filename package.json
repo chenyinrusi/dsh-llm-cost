@@ -1,6 +1,6 @@
 {
   "name": "dsh-llm-cost",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Per-turn, per-step LLM cost metering for DeepSeek Harness: a costUsage session projection, a cost line under each message, and an LLM+web price auto-maintenance tool.",
   "license": "MIT",
   "author": "Chen (Jarry) Pan",
@@ -8,9 +8,21 @@
     "type": "git",
     "url": "git+https://github.com/chenyinrusi/dsh-llm-cost.git"
   },
-  "keywords": ["deepseek-harness", "dsh", "plugin", "dsh-plugin", "cost", "pricing", "llm"],
-  "engines": { "node": ">=20" },
-  "publishConfig": { "access": "public" },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "plugin",
+    "dsh-plugin",
+    "cost",
+    "pricing",
+    "llm"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -33,7 +45,9 @@
     "LICENSE"
   ],
   "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
       "immediately": true,
