@@ -19,10 +19,10 @@ export const inject = ['slots']
 
 function formatUsd(value: number): string {
   if (value === 0) return '$0.00'
-  if (value < 0.0001) return `$$${value.toExponential(1)}`
-  if (value < 0.01) return `$$${value.toFixed(5)}`
-  if (value < 1) return `$$${value.toFixed(4)}`
-  return `$$${value.toFixed(2)}`
+  if (value < 0.0001) return `$${value.toExponential(1)}`
+  if (value < 0.01) return `$${value.toFixed(5)}`
+  if (value < 1) return `$${value.toFixed(4)}`
+  return `$${value.toFixed(2)}`
 }
 
 function formatTokens(value: number): string {
