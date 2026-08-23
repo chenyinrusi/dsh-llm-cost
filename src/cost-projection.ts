@@ -6,13 +6,11 @@
  */
 
 import { z } from 'zod'
-import type { ZodType } from 'zod'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { PricingRegistry } from './pricing.ts'
 import type {
   CostProjectionState,
-  CostUsageProjection,
   MinimalEvent,
 } from './fold.ts'
 import { applyCostEvent, initCostState, viewCostState } from './fold.ts'
@@ -38,6 +36,7 @@ const modelAggregateSchema = z.object({
   outputTokens: z.number().int().nonnegative(),
 }).strict()
 
+/** Client-visible wire payload: the whole current costUsage value. */
 const costUsageSchema = z.object({
   totalCostUsd: z.number(),
   pricedSteps: z.number().int().nonnegative(),
@@ -50,20 +49,45 @@ const costUsageSchema = z.object({
   steps: z.array(stepRecordSchema),
 }).strict()
 
+/** Host-side fold state, including the fold-internal route and lastStep fields. */
+const costUsageStateSchema = z.object({
+  route: z.object({
+    provider: z.string(),
+    model: z.string(),
+  }).nullable(),
+  totalCostUsd: z.number(),
+  pricedSteps: z.number().int().nonnegative(),
+  unpricedSteps: z.number().int().nonnegative(),
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  cacheReadTokens: z.number().int().nonnegative(),
+  cacheWriteTokens: z.number().int().nonnegative(),
+  byModel: z.array(modelAggregateSchema),
+  steps: z.array(stepRecordSchema),
+  lastStep: z.object({
+    turn: z.number().int().nonnegative(),
+    step: z.number().int().nonnegative(),
+    record: stepRecordSchema,
+  }).nullable(),
+}).strict()
+
 /**
  * Build the cost projection unit.
  * @param registry - thunk returning the current pricing table (supports refresh).
  */
 export function createCostProjection(
   registry: () => PricingRegistry,
-): ProjectionDefinition<'costUsage', CostProjectionState> {
+) {
   return {
     key: 'costUsage',
-    schema: costUsageSchema as ZodType<CostUsageProjection>,
+    stateSchema: costUsageStateSchema,
     init: initCostState,
-    apply: (state, event: SessionEvent) =>
+    apply: (state: CostProjectionState, event: SessionEvent) =>
       applyCostEvent(state, event as unknown as MinimalEvent, registry()),
-    view: viewCostState,
     stateVersion: 1,
-  }
+    wire: {
+      viewSchema: costUsageSchema,
+      view: viewCostState,
+    },
+  } satisfies ProjectionDefinition<'costUsage', CostProjectionState>
 }

@@ -26,13 +26,15 @@ DSH 已经精确记录了每个 step 的真实 token 用量（`assistant/message
 
 ```bash
 # git（推荐：lib/ 已提交，免本地构建）
-dsh plugin --profile web add github:chenyinrusi/dsh-llm-cost#v0.3.1
+dsh plugin --profile web add github:chenyinrusi/dsh-llm-cost#v0.6.0
 
 # 本地 tarball（内网 / 离线）
-dsh plugin --profile web add ./dsh-llm-cost-0.3.1.tgz
+dsh plugin --profile web add ./dsh-llm-cost-0.6.0.tgz
 ```
 
 > npm 渠道暂未发布。如需 `dsh plugin --profile web add dsh-llm-cost`，先在仓库跑 `npm login && npm publish`。
+
+> **要求 DSH ≥ 0.1.1-rc.2**（v0.6.0 起使用 `ProjectionDefinition` 的 `stateSchema` + `wire` 契约，旧 rc 版本无此 API）。
 
 本地验证：`pnpm dsh web --patch ./cordis.patch.yml`（或 `--dump-config` 查看层）。
 
