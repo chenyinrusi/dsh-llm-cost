@@ -90,6 +90,20 @@ test('isPeak detects the peak windows (01:00-04:00, 06:00-10:00 UTC)', () => {
   assert.equal(isPeak(at(12)), false) // 12:00 UTC off-peak
 })
 
+test('isPeak treats weekends as off-peak from 2026-08-23', () => {
+  // Before the effective date, weekends still follow the hourly windows.
+  assert.equal(isPeak(Date.UTC(2026, 7, 22, 2, 0, 0)), true) // Sat 08-22 02:00 UTC
+  // 2026-08-23 is a Sunday: the weekend rule begins.
+  assert.equal(isPeak(Date.UTC(2026, 7, 23, 2, 0, 0)), false) // Sun 02:00 UTC
+  assert.equal(isPeak(Date.UTC(2026, 7, 23, 8, 0, 0)), false) // Sun 08:00 UTC
+  assert.equal(isPeak(Date.UTC(2026, 7, 23, 12, 0, 0)), false) // Sun 12:00 UTC
+  // Weekdays after the effective date keep the hourly windows.
+  assert.equal(isPeak(Date.UTC(2026, 7, 24, 2, 0, 0)), true) // Mon 02:00 UTC
+  assert.equal(isPeak(Date.UTC(2026, 7, 24, 12, 0, 0)), false) // Mon 12:00 UTC
+  // A later Saturday is also off-peak around the clock.
+  assert.equal(isPeak(Date.UTC(2026, 7, 29, 2, 0, 0)), false) // Sat 02:00 UTC
+})
+
 test('off-peak factor halves the cost outside peak windows', () => {
   const entry = { inputPerM: 1, outputPerM: 2, offPeakFactor: 0.5 }
   const usage = { inputTokens: 1000, outputTokens: 0 }

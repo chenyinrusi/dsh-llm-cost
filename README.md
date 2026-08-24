@@ -26,10 +26,10 @@ DSH 已经精确记录了每个 step 的真实 token 用量（`assistant/message
 
 ```bash
 # git（推荐：lib/ 已提交，免本地构建）
-dsh plugin --profile web add github:chenyinrusi/dsh-llm-cost#v0.6.0
+dsh plugin --profile web add github:chenyinrusi/dsh-llm-cost#v0.6.1
 
 # 本地 tarball（内网 / 离线）
-dsh plugin --profile web add ./dsh-llm-cost-0.6.0.tgz
+dsh plugin --profile web add ./dsh-llm-cost-0.6.1.tgz
 ```
 
 > npm 渠道暂未发布。如需 `dsh plugin --profile web add dsh-llm-cost`，先在仓库跑 `npm login && npm publish`。
@@ -67,7 +67,7 @@ dsh plugin --profile web add ./dsh-llm-cost-0.6.0.tgz
 
 `pricing.json` 是内置 JSON 快照，由 `scripts/gen-pricing.mjs` 从 `llm_models.toml [pricing_v2]` 生成（默认读相邻 `customized_agentic_system/src/config/llm_models.toml`）。计费字段：`inputPerM`（cache miss）/ `outputPerM` / `cacheReadPerM`（cache hit）/ `cacheWritePerM`（`cacheWrite1hPerM` 保留，batch/storage 维度 v1 不计入显示值）。
 
-**峰谷定价**：字段存的是**峰值价**；`offPeakFactor`（如 0.5）声明闲时折扣。峰时窗口 = 01:00–04:00 & 06:00–10:00 UTC，其余时段成本 × `offPeakFactor`。成本计算按事件时间戳判定，未声明 `offPeakFactor` 的模型恒按峰值价。
+**峰谷定价**：字段存的是**峰值价**；`offPeakFactor`（如 0.5）声明闲时折扣。峰时窗口 = 01:00–04:00 & 06:00–10:00 UTC（仅工作日）；**自 2026-08-23 起，UTC 周六/周日全天均为闲时**。其余时段成本 × `offPeakFactor`。成本计算按事件时间戳判定，未声明 `offPeakFactor` 的模型恒按峰值价。
 
 ## 匹配阶梯（对齐 `models.py:get_pricing`）
 

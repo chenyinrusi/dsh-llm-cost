@@ -81,9 +81,16 @@ export function resolvePricing(
 /** Peak billing windows in UTC hours: 01:00–04:00 and 06:00–10:00 (all else off-peak). */
 const PEAK_WINDOWS: readonly [number, number][] = [[1, 4], [6, 10]]
 
+/** Since 2026-08-23T00:00:00Z, DeepSeek bills weekends (UTC Sat/Sun) off-peak all day. */
+const WEEKEND_OFF_PEAK_EFFECTIVE_MS = Date.UTC(2026, 7, 23)
+
 /** Whether a Unix-epoch-ms timestamp falls in a DeepSeek peak billing window. */
 export function isPeak(ms: number): boolean {
   const d = new Date(ms)
+  if (ms >= WEEKEND_OFF_PEAK_EFFECTIVE_MS) {
+    const day = d.getUTCDay() // 0 = Sunday, 6 = Saturday
+    if (day === 0 || day === 6) return false
+  }
   const hour = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600
   return PEAK_WINDOWS.some(([start, end]) => hour >= start && hour < end)
 }

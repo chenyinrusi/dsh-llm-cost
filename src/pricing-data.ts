@@ -4,7 +4,7 @@ import type { PricingRegistry } from './pricing.ts'
 
 export const DEFAULT_PRICING: PricingRegistry = {
   "version": 1,
-  "generatedAt": "2026-08-16T20:35:08.163Z",
+  "generatedAt": "2026-08-24T00:03:55.139Z",
   "source": "llm_models.toml [pricing_v2]",
   "models": {
     "claude-fable-5": {
@@ -72,7 +72,7 @@ export const DEFAULT_PRICING: PricingRegistry = {
       "cacheReadPerM": 0.014,
       "offPeakFactor": 0.5,
       "effectiveDate": "2026-08-17",
-      "notes": "Peak 01:00-04:00 & 06:00-10:00 UTC; off-peak = half. cache miss=input"
+      "notes": "Peak 01:00-04:00 & 06:00-10:00 UTC weekdays; weekends off-peak all day (from 2026-08-23). cache miss=input"
     },
     "deepseek-v4-pro": {
       "provider": "deepseek",
@@ -81,7 +81,7 @@ export const DEFAULT_PRICING: PricingRegistry = {
       "cacheReadPerM": 0.044,
       "offPeakFactor": 0.5,
       "effectiveDate": "2026-08-17",
-      "notes": "Peak 01:00-04:00 & 06:00-10:00 UTC; off-peak = half. cache miss=input"
+      "notes": "Peak 01:00-04:00 & 06:00-10:00 UTC weekdays; weekends off-peak all day (from 2026-08-23). cache miss=input"
     },
     "gemini-3-flash-preview": {
       "provider": "gemini",
